@@ -9,9 +9,9 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class CacheService {
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final RedisTemplate<String, ChatMessage> redisTemplate;
 
-    public CacheService(RedisTemplate<String, Object> redisTemplate) {
+    public CacheService(RedisTemplate<String, ChatMessage> redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
