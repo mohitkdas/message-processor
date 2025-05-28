@@ -1,0 +1,50 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Step 2: Set up Java
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # Step 3: Build the JAR file
+      - name: Build JAR
+        run: mvn clean package -DskipTests
+
+      # Step 4: Set up SSH for secure transfer
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.AWS_KEY }}
+
+      # Step 5: Identify the latest JAR file
+      - name: Find JAR file
+        id: jarfile
+        run: |
+          JAR_NAME=$(ls target/*.jar | tail -n 1)
+          echo "JAR_NAME=$(basename $JAR_NAME)" >> $GITHUB_ENV
+      # Step 6: Transfer the latest JAR to EC2
+      - name: Transfer JAR to EC2
+        run: |
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa target/${{ env.JAR_NAME}} ${{ secrets.AWS_USER }}@${{ secrets.AWS_HOST }}:/home/${{ secrets.AWS_USER }}/
+      # Step 7: Restart the application on EC2
+      - name: Restart Application on EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${{ secrets.AWS_USER }}@${{ secrets.AWS_HOST }} << 'EOF'
+          pkill -f 'java -jar' || true
+          nohup java -jar /home/${{ secrets.AWS_USER }}/${{ env.JAR_NAME }} > app.log 2>&1 &
+          EOF
