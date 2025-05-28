@@ -1,26 +1,32 @@
 package com.mohit.message.processor.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mohit.message.processor.model.ChatMessage;
-import org.springframework.data.redis.core.RedisTemplate;
+import io.lettuce.core.cluster.api.sync.RedisAdvancedClusterCommands;
 import org.springframework.stereotype.Service;
-
-import java.util.concurrent.TimeUnit;
 
 @Service
 public class CacheService {
 
-    private final RedisTemplate<String, ChatMessage> redisTemplate;
+    private final RedisAdvancedClusterCommands<String, String> redisCommands;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public CacheService(RedisTemplate<String, ChatMessage> redisTemplate) {
-        this.redisTemplate = redisTemplate;
+    public CacheService(RedisAdvancedClusterCommands<String, String> redisCommands) {
+        this.redisCommands = redisCommands;
     }
 
     public void cacheMessage(String roomId, ChatMessage message) {
-        String key = "chat:room:" + roomId;
-        redisTemplate.opsForList().rightPush(key, message);
-        redisTemplate.expire(key, 1, TimeUnit.HOURS);
-        if (redisTemplate.opsForList().size(key) > 50) {
-            redisTemplate.opsForList().leftPop(key);
+        try {
+            String key = "chat:room:" + roomId;
+            String json = objectMapper.writeValueAsString(message);
+
+            redisCommands.rpush(key, json);
+            if (redisCommands.llen(key) > 50) {
+                redisCommands.lpop(key);
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException("Redis caching failed", e);
         }
     }
 }

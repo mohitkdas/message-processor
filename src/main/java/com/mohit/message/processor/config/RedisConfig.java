@@ -1,41 +1,40 @@
 package com.mohit.message.processor.config;
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mohit.message.processor.model.ChatMessage;
+import io.lettuce.core.RedisURI;
+import io.lettuce.core.cluster.RedisClusterClient;
+import io.lettuce.core.cluster.api.StatefulRedisClusterConnection;
+import io.lettuce.core.cluster.api.sync.RedisAdvancedClusterCommands;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.repository.configuration.EnableRedisRepositories;
-import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
-import org.springframework.data.redis.serializer.StringRedisSerializer;
+
+import java.time.Duration;
+import java.util.Collections;
 
 @Configuration
-@EnableRedisRepositories
 public class RedisConfig {
 
-    @Bean
-    public LettuceConnectionFactory redisConnectionFactory() {
-        return new LettuceConnectionFactory("localhost", 6379);
+    private static final String REDIS_CLUSTER_ENDPOINT = "clustercfg.chat-application.yq50wk.use1.cache.amazonaws.com";
+    private static final int REDIS_PORT = 6379;
+
+    @Bean(destroyMethod = "shutdown")
+    public RedisClusterClient redisClusterClient() {
+        RedisURI redisURI = RedisURI.builder()
+                .withHost(REDIS_CLUSTER_ENDPOINT)
+                .withPort(REDIS_PORT)
+                .withSsl(true)
+                .withTimeout(Duration.ofSeconds(5))
+                .build();
+
+        return RedisClusterClient.create(Collections.singletonList(redisURI));
+    }
+
+    @Bean(destroyMethod = "close")
+    public StatefulRedisClusterConnection<String, String> redisClusterConnection(RedisClusterClient client) {
+        return client.connect();
     }
 
     @Bean
-    public RedisTemplate<String, ChatMessage> redisTemplate() {
-        RedisTemplate<String, ChatMessage> template = new RedisTemplate<>();
-        template.setConnectionFactory(redisConnectionFactory());
-
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY);
-
-        Jackson2JsonRedisSerializer<ChatMessage> jacksonSerializer =
-                new Jackson2JsonRedisSerializer<>(objectMapper, ChatMessage.class);
-
-        template.setKeySerializer(new StringRedisSerializer());
-        template.setHashKeySerializer(new StringRedisSerializer());
-        template.setValueSerializer(jacksonSerializer);
-        template.setHashValueSerializer(jacksonSerializer);
-        return template;
+    public RedisAdvancedClusterCommands<String, String> redisCommands(StatefulRedisClusterConnection<String, String> connection) {
+        return connection.sync();
     }
 }
