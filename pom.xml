@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.mohit</groupId>
     <artifactId>message-processor</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.0.1</version>
     <name>message-processor</name>
     <description>message-processor</description>
     <url/>
