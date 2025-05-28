@@ -4,16 +4,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mohit.message.processor.model.ChatMessage;
 import com.mohit.message.processor.repository.MessageRepository;
 import com.mohit.message.processor.service.CacheService;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.DeleteMessageRequest;
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageResponse;
-import software.amazon.awssdk.services.sqs.model.DeleteMessageRequest;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Slf4j
 @Service
@@ -23,7 +25,9 @@ public class ChatMessageListener {
     private final MessageRepository messageRepository;
     private final CacheService cacheService;
     private final ObjectMapper objectMapper;
-    private final String queueUrl = "https://sqs.us-east-1.amazonaws.com/755431179999/chat-message-queue";
+    private final String queueUrl = "https://sqs.us-east-1.amazonaws.com/755431179999/chat-message-queue.fifo";
+
+    private final ExecutorService executor = Executors.newFixedThreadPool(4);
 
     public ChatMessageListener(SqsClient sqsClient, MessageRepository messageRepository, CacheService cacheService) {
         this.sqsClient = sqsClient;
@@ -32,49 +36,42 @@ public class ChatMessageListener {
         this.objectMapper = new ObjectMapper();
     }
 
-    @PostConstruct
+    @Scheduled(fixedDelay = 500)
     public void receiveMessages() {
-        new Thread(() -> {
-            while (true) {
-                try {
-                    ReceiveMessageRequest receiveRequest = ReceiveMessageRequest.builder()
-                            .queueUrl(queueUrl)
-                            .maxNumberOfMessages(10)
-                            .build();
+        try {
+            ReceiveMessageRequest receiveRequest = ReceiveMessageRequest.builder()
+                    .queueUrl(queueUrl)
+                    .maxNumberOfMessages(10)
+                    .waitTimeSeconds(10) // Long polling
+                    .build();
 
-                    ReceiveMessageResponse response = sqsClient.receiveMessage(receiveRequest);
-                    List<Message> messages = response.messages();
+            ReceiveMessageResponse response = sqsClient.receiveMessage(receiveRequest);
+            List<Message> messages = response.messages();
 
-                    for (Message message : messages) {
-                        log.info("Received message: {}", message.body());
-                        processMessage(message.body());
-
-                        // Delete the message after processing
-                        sqsClient.deleteMessage(DeleteMessageRequest.builder()
-                                .queueUrl(queueUrl)
-                                .receiptHandle(message.receiptHandle())
-                                .build());
-                    }
-                    Thread.sleep(1000);  // Delay to prevent tight looping
-                } catch (Exception e) {
-                    log.error("Error receiving messages from SQS: {}", e.getMessage());
-                }
+            for (Message message : messages) {
+                processMessage(message);
             }
-        }).start();
+
+        } catch (Exception e) {
+            log.error("SQS polling error: {}", e.getMessage(), e);
+        }
     }
 
-    private void processMessage(String messageBody) {
+    private void processMessage(Message message) {
         try {
-            ChatMessage chatMessage = objectMapper.readValue(messageBody, ChatMessage.class);
+            ChatMessage chatMessage = objectMapper.readValue(message.body(), ChatMessage.class);
             log.info("Processing message from {}: {}", chatMessage.getSender(), chatMessage.getContent());
 
             messageRepository.saveMessage(chatMessage);
-            log.info("Message saved to DynamoDB");
-
             cacheService.cacheMessage(chatMessage.getRoomId(), chatMessage);
-            log.info("Message cached in Redis");
+
+            sqsClient.deleteMessage(DeleteMessageRequest.builder()
+                    .queueUrl(queueUrl)
+                    .receiptHandle(message.receiptHandle())
+                    .build());
+
         } catch (Exception e) {
-            log.error("Failed to process message: {}", e.getMessage());
+            log.error("Message processing failed: {}", e.getMessage(), e);
         }
     }
 }
