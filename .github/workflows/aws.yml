@@ -39,5 +39,5 @@ jobs:
           docker stop message-processor || true
           docker rm message-processor || true
           docker build -t message-processor .
-          docker run -d --name message-processor --env-file .env -p 8083:8080 message-processor
+          docker run -d --name message-processor --env-file .env --memory="256m" -p 8083:8080 message-processor
           EOF
