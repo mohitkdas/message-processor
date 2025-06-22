@@ -13,7 +13,7 @@ import java.util.Collections;
 @Configuration
 public class RedisConfig {
 
-    private static final String REDIS_CLUSTER_ENDPOINT = "clustercfg.chat-application.yq50wk.use1.cache.amazonaws.com";
+    private static final String REDIS_CLUSTER_ENDPOINT = "clustercfg.redis-cache.yq50wk.use1.cache.amazonaws.com";
     private static final int REDIS_PORT = 6379;
 
     @Bean(destroyMethod = "shutdown")
